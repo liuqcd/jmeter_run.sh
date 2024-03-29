@@ -281,10 +281,16 @@ if [ $nmonswitch ]; then
     log info "下载远程服务器上的nmon文件结束!!!"
 fi
 
-# 下载nmon文件成功后，删除服务器的临时目录
+# 下载nmon文件成功后，使用rnmon快分析nmon文件，并删除服务器的临时目录
 if [ $nmonswitch ]; then 
     res=`ls ${nmon_dir}/*res.nmon 2>/dev/null`
     if [ -n "$res" ]; then
+        # 快速分析nmon文件
+        res_nmon_file="${nmon_dir}/res.nmon.txt"
+        rnmon ${nmon_dir} > ${res_nmon_file}
+        log info "使用rnmon程序，分析${nmon_dir}目录下的nmon文件，其结果为:"
+        cat ${res_nmon_file}
+        # 删除服务器的临时目录
         rssh_args="-l $logfile $nmonregex exec rm -- -rf ${remote_nmon_dir}"
         log info "监测${nmon_dir}目录中存在*res.nmon文件，删除远程服务器上临时目录开始..., 将执行命令: rssh_async ${rssh_args}"
         rssh_async $rssh_args
