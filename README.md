@@ -21,7 +21,7 @@ rssh > all rm perf/res.nmon
 
 # step 2
 # 使用JMeter CLI MOD，发起JMeter压测
-jmeter -Jjmeter.reportgenerator.overall_granularity=2000 -Jsummariser.interval=10 -JThreads=100 -JRampup=1 -JDuration=310 -JJLoopOrRampupCount=-1 -n -t 1.jmx -l res.jtl -e -o res
+jmeter -Jjmeter.reportgenerator.overall_granularity=2000 -Jsummariser.interval=10 -JThreads=100 -JRampup=1 -JDuration=310 -JLoopOrRampupCount=-1 -n -t 1.jmx -l res.jtl -e -o res
 # 发起nmon监控
 rssh > all exec nmon -F perf/res.nmon -t -s 1 -c 300
 # 查看jmeter命令返显的概述结果（每10秒的增量，从测试开始到现在平均值，包括TPS, 平均响应时间，错误数据和错误率）

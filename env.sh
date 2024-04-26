@@ -1,2 +1,2 @@
-PATH=$PATH:$PWD/bin
-export PATH
+#!/bin/bash
+export PATH=$PATH:$PWD/bin

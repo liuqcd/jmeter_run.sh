@@ -1,0 +1,73 @@
+run.sh  [OPTIONS]... [ARGS]
+
+简化使用jmeter CLI mode的一系列的操作。
+结合三方工具: nmon 和 自写的小工具： rssh_async, rnmon ，简化系统资源监视发起收集和分析工作。
+
+OPTIONS: ("<>"标识的选项必填， "[]"标识的选项选填或具有默认值)
+
+    -pnew 在当前工作目录（$PWD）, 创建test.proerties配置文件。 此选项存在时，其他选项无效。
+
+    -p,-prop <file> proerties配置文件，默认: test.proerties
+
+    -j,-jmx <file> 指定要运行的.jmx文件
+
+    -t,-thd,-threads  <num> 指定运行或要达到的目标线程数，有效值>=1
+        Thread Group 时，代表: Number of Threads
+        Concurrency Thread Group 时，代表： Target Concurrency
+
+    -r,-rampup  [secs] 指定用于加载线程的时间，有效值>=1，默认为1秒
+        Thread Group 时，代表: Ramp-up Period (sec)
+        Concurrency Thread Group 时，代表： Ramp Up Time (sec)
+
+    -d,-duration  <secs> 指定加载完线程数后的持续运行时间，有效值>=1
+        Thread Group 时，代表: Duration (seconds)
+        Concurrency Thread Group 时，代表： Hold Target Rate Time(sec) 
+
+    -c,-count  <num> 指定每个线程运行的迭代次数或线程分几次加载
+        Thread Group 时，代表: Loop Count , 有效值>=-1
+        Concurrency Thread Group 时，代表： Ramp-Up Steps Count , 有效值>=1
+
+    -nmon [regex] 指定要监控的服务器(server.json文件中groupname, hostname, ip) 三项任一匹配即可
+        默认值值: all, 等价正则表达式为: ".*"
+        本选项使用三方工具和自写的小工具，其中rssh_async程序要求server.json配置文件
+
+    -nmondir [path] 指定远程服务器上nmon程序的相对路径（相对于登录用户的home目录
+        适用于服务器未安装nmon程序，测试人员上传nmon程序到指定目录
+        需搭建"-nmon"选项使用
+
+    -nmonident [str] 需搭配"-nmon"选项使用，默认为: perf
+        作为查询nmon进程的标识符。
+        在远程服务器上新建一个[str]目录存放测试的数据
+
+    -E,-e[str] 若给jmeter的参数选项与run.sh参数选项冲突时，可使用"-E"选项，跳过run.sh脚本的选项检查
+        上述"-r"选项与jmeter的"-r, --runremote Start remote servers"选项冲突
+        解决冲突使用: -E-r 192.168.1.5 , 可向jmeter传参: -r 192.168.1.5
+
+ARGS:  不在[OPIONTS]里参数，直到赋予到jmeter命令参数
+
+例如:
+    Thread Group: 50线程1秒加载完，持续运行200秒，-1表达每个线程持续运行：
+        run.sh -jmx fixed.jmx -thd 50 -duration 200 -c -1
+        run.sh -j fixed.jmx -t 50 -d 200 -c -1
+        run.sh -j fixed.jmx -t 50 -d 200 -c -1 -nmon 
+        run.sh -j fixed.jmx -t 50 -d 200 -c -1 -nmon [regex]
+
+    Concurrency Thread Group: 100线程，600秒内分10次加载（600/10=60秒，即每个阶梯运行60秒），所有线程加载完成后运行5秒:
+        run.sh -jmx steps.jmx -thd 100 -rampup 600 -c 10 -d 5
+        run.sh -j steps.jmx -t 100 -r 600 -c 10 -d 5
+        run.sh -j steps.jmx -t 100 -r 600 -c 10 -d 5 -nmon 
+        run.sh -j steps.jmx -t 100 -r 600 -c 10 -d 5 -nmon [regex]
+
+注意: 
+    中途停止jmeter运行方式：
+        方式一，正常停止，运行$JMETER_HOME/bin目录下的shutdown.sh脚本，可生成jmeter的html报告。
+        方式二，强制停止，CTRL+C , 无法生成html报告。
+
+附：
+    原理1：JMX脚本中利用"${__P(name, value)}"函数配置变量后，在使用jmeter命令时，传入"Jname=value"参数可改变变量值
+        比如在线程组中配置：           ${__P(Threads, 1)}, ${__P(Rampup, 1)}, ${__P(Duration, 1)}, ${__P(LoopOrRampupCount, 1)}
+        运行jmeter命令时可更改其值: jmeter -JThreads=10,      -JRampup=1,        -JDuration=320,        -JLoopOrRampupCount=-1  
+        若有多个线程组使用不同参数时，请在JMX脚本中使用"${__P(yourgroup1.threads, 1)}"形式参数化变量，再传run.sh脚本传入参数"-Jyourgroup1.threads=100"来测试。
+
+    原理2：通过properties配置文件, 固化本次测试中不怎个变的参数, 有效参数参考JMeter的*.properties文件。
+ 
