@@ -1,11 +1,14 @@
-#!/bin/sh
+#!/bin/bash
 
 scriptdir=`dirname $0` 
 curdir=$PWD
 
 logfile="run.log"
+rsafile="rsa.txt"
+asyncsshfile="server.json"
 
 function log() {
+    local level
     case "$1" in
         "debug" ) level="DEBUG" ;;
         "info" ) level="INFO" ;;
@@ -17,6 +20,128 @@ function log() {
     local ts=`date "+%m-%d %H:%M:%S"`
     echo "$ts ${level} [run.sh] $@" >> $logfile
     echo "$ts ${level} [run.sh] $@"
+}
+
+function async_ssh_ops() {
+    local mode=$1
+    local rssh_args
+
+    case "$mode" in
+        "killnmon" ) 
+            if [[ -n $nmonident ]]; then
+                rssh_args="-l $logfile $nmonregex exec ps -- -ef | grep $nmonident | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
+            else
+                rssh_args="-l $logfile $nmonregex exec ps -- -ef | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
+            fi
+            log info "杀掉远程服务器上可能正在运行的nmon程序..., 将执行命令: rssh_async ${rssh_args}"
+            rssh_async $rssh_args
+            log info "杀掉远程服务器上可能正在运行的nmon程序结束!!!"
+            ;;
+
+        "mkdir" )
+            rssh_args="-l $logfile $nmonregex exec mkdir -- -p $remote_nmon_archive_dir"
+            log info "远程服务器上, 新建临时目录: ${remote_nmon_archive_dir}, 执行命令: rssh_async ${rssh_args}"
+            rssh_async $rssh_args
+            ;;
+
+        "runnmon" )
+            rssh_args="-l $logfile $nmonregex exec $nmonprogm -- -F $monitor_nmon_file -t -s $monitor_interval -c $monitor_count"
+            log info "nmon监控发起开始..., 执行命令: rssh_async ${rssh_args}"
+            rssh_async $rssh_args
+            log info "nmon监控发起结束!!!"
+            ;;
+
+        "downloadnmon" ) 
+            rssh_args="-l $logfile $nmonregex get $monitor_nmon_file $local_nmon_archive_dir"
+            log info "下载远程服务器上的nmon文件..., 将执行命令: rssh_async ${rssh_args}"
+            rssh_async $rssh_args
+            log info "下载远程服务器上的nmon文件结束!!!"        
+            ;;
+
+        "rmnmon" ) 
+            rssh_args="-l $logfile $nmonregex exec rm -- -rf ${remote_nmon_archive_dir}"
+            log info "监测${local_nmon_archive_dir}目录中存在*res.nmon文件，删除远程服务器上临时目录..., 执行命令: rssh_async ${rssh_args}"
+            rssh_async $rssh_args
+            log info "删除远程服务器上的临时目录结束!!!"
+            ;;
+
+        * ) log error "async_ssh_ops函数被传未知的参数：${mode}, 支持的参数有: killnmon, mkdir, runnmon, downloadnmon, rmnmon" && exit 3 
+            ;;
+    esac
+
+}
+
+function rsa_ops() {
+    local mode=$1
+    local rssh_args
+    local destinations="cat ${rsafile} | grep -v '#'"
+
+    case "$mode" in
+        "killnmon" ) 
+            if [[ -n $nmonident ]]; then
+                rssh_args="ps -ef | grep $nmonident | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
+            else
+                rssh_args="ps -ef | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
+            fi
+
+            for dst in `eval $destinations`
+            do
+                log info "杀掉远程服务器上可能正在运行的nmon程序..., 执行命令: ssh ${dst} ${rssh_args}"
+                ssh ${dst} $rssh_args
+            done
+            log info "杀掉远程服务器上可能正在运行的nmon程序结束!!!"
+            ;;
+
+        "mkdir" )
+            rssh_args="mkdir -p $remote_nmon_archive_dir"
+            for dst in `eval $destinations`
+            do
+                log info "远程服务器上, 新建临时目录: ${remote_nmon_archive_dir}, 执行命令: ssh ${dst} ${rssh_args}"
+                ssh ${dst} $rssh_args
+            done
+            ;;
+
+        "runnmon" )
+            rssh_args="$nmonprogm -F $monitor_nmon_file -t -s $monitor_interval -c $monitor_count"
+            for dst in `eval $destinations`
+            do
+                log info "nmon监控发起开始..., 执行命令: ssh ${dst} ${rssh_args}"
+                ssh ${dst} $rssh_args
+            done
+            log info "nmon监控发起结束!!!"
+            ;;
+
+        "downloadnmon" ) 
+            rssh_args="$monitor_nmon_file $local_nmon_archive_dir"
+            for dst in `eval $destinations`
+            do
+                log info "下载远程服务器上的nmon文件..., 执行命令: scp ${dst}:${rssh_args}"
+                scp ${dst}:$rssh_args
+            done
+            log info "下载远程服务器上的nmon文件结束!!!"        
+            ;;
+
+        "rmnmon" ) 
+            rssh_args="rm -rf ${remote_nmon_archive_dir}"
+            for dst in `eval $destinations`
+            do
+                log info "监测${local_nmon_archive_dir}目录中存在*res.nmon文件，删除远程服务器上临时目录..., 执行命令: ssh ${dst} ${rssh_args}"
+                ssh ${dst} $rssh_args
+            done
+            log info "删除远程服务器上的临时目录结束!!!"
+            ;;
+
+        * ) log error "async_ssh_ops函数被传未知的参数：${mode}, 支持的参数有: killnmon, mkdir, runnmon, downloadnmon, rmnmon" && exit 3 
+            ;;
+    esac
+}
+
+function remote_ops() {
+    case "$nmonmode" in 
+        "async_ssh" ) async_ssh_ops $1 ;;
+        "rsa" ) rsa_ops $1 ;;
+    esac
+
 }
 
 # 不带参数运行run.sh时显示帮助文档
@@ -64,19 +189,15 @@ do
                 # run.sh脚本剩余参数的个数大于等于2
                 if [[ "$2" =~ -.* ]]; then 
                     # "-nmon"选项后跟着以"-"打头的选项，说明"-nmon"选项未指定[regex]，脚本后面会赋予默认值
-                    echo "111"
                     shellMap1["nmon"]=""
                 else 
-                    echo "222"
                     shift && shellMap1["nmon"]=$1
                 fi
             else 
                 if [[ $# -le 1 ]]; then 
-                    echo "333"
                     # 小于等于1，脚本后面赋予默认值
                     shellMap1["nmon"]=""
                 else 
-                    echo "444"
                     shift && shellMap1["nmon"]=$1
                 fi
             fi ;;
@@ -84,6 +205,8 @@ do
         "-nmondir" ) shift && shellMap1["nmondir"]=$1 ;;
 
         "-nmonident" ) shift && shellMap1["nmonident"]=$1 ;;
+
+        "-nmonmode" ) shift && shellMap1["nmonmode"]=$1 ;;
 
         * ) 
             # -E 选项用于向jmeter程序传入与上述选项名相同的参数，并放入map中
@@ -230,12 +353,31 @@ if [[ -z $nmonident && -n $nmonswitch ]]; then
     nmonident="perf"
     log warn "-nmonident [str] 未指定[str]值，使用默认值: perf"
 fi
+### nmonmode
+nmonmode=${shellMap1["nmonmode"]}
+if [[ -z $nmonmode && -n $nmonswitch ]]; then
+    nmonmode="async_ssh"
+    log warn "-nmonmode [str] 未指定[str]值，使用默认值: async_ssh"
+fi
+if [[ $nmonmode = "rsa" && -n $nmonswitch ]]; then
+    if [ ! -f $rsafile ]; then
+        log error "-nmonmode为rsa时，${rsafile}配置文件必须存在，里面存在免密登录时连接字符串, 即\`ssh destination command\`命令中的destionation"
+        exit 1
+    fi
+fi
+if [[ $nmonmode = "async_ssh" && -n $nmonswitch ]]; then
+    if [ ! -f $asyncsshfile ]; then
+        log error "-nmonmode为async_assh时，${asyncsshfile}配置文件必须存在"
+        exit 1
+    fi
+fi
+
 ### NmonARGS参数汇总
 if [ $nmonswitch ]; then 
     if [[ -n $nmondir ]]; then 
-        NmonARGS="-nmon ${nmon} -nmondir ${nmondir} -nmonident ${nmonident}"
+        NmonARGS="-nmon ${nmon} -nmondir ${nmondir} -nmonident ${nmonident} -nmonmode ${nmonmode}"
     else
-        NmonARGS="-nmon ${nmon} -nmonident ${nmonident}"
+        NmonARGS="-nmon ${nmon} -nmonident ${nmonident} -nmonmode ${nmonmode}"
     fi
     log info "本次传入处理nmon相关的参数有: $NmonARGS"
 fi
@@ -276,15 +418,15 @@ log info "动态计算，monitor_count: $monitor_count"
 ## 涉及jmeter的jmeter.reportgenerator.overall_granularity参数
 ## 当properties文件中存在该参数时，脚本以文件中的设置为准。
 if [ $monitor_duration -lt 240 ]; then # <4min, 最大240个点
-    overall_granularity=1
+    overall_granularity=1000
 elif [ $monitor_duration -lt 1860 ]; then # <31min, 最大930个点
-    overall_granularity=2
+    overall_granularity=2000
 elif [ $monitor_duration -le 9000 ]; then  # <2.5h, 最大900个点
-    overall_granularity=10
+    overall_granularity=10000
 elif [ $monitor_duration -le 19800 ]; then # <5.5h，最大990个点
-    overall_granularity=20
+    overall_granularity=20000
 else
-    overall_granularity=30  # 12.5h，有1500个点
+    overall_granularity=30000  # 12.5h，有1500个点
 fi
 log info "动态计算，overall_granularity: $overall_granularity"
 name="jmeter.reportgenerator.overall_granularity"
@@ -346,14 +488,7 @@ fi
 ### 若没有标识符nmonident，则Kill掉所有正在运行的nmon程序
 ### grep -v jmx 用于排除本脚本运行的进程
 if [ $nmonswitch ]; then 
-    if [[ -n $nmonident ]]; then
-        rssh_args="-l $logfile $nmonregex exec ps -- -ef | grep $nmonident | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
-    else
-        rssh_args="-l $logfile $nmonregex exec ps -- -ef | grep nmon |grep -v jmx | grep -v grep | awk '{print \$2}' | xargs -r kill -9"
-    fi
-    log info "杀掉远程服务器上可能正在运行的nmon程序..., 将执行命令: rssh_async ${rssh_args}"
-    rssh_async $rssh_args
-    log info "杀掉远程服务器上可能正在运行的nmon程序结束!!!"
+    remote_ops killnmon
 fi
 
 ## 运行前设置临时目录，格式: 月日-时分
@@ -373,16 +508,12 @@ if [ $nmonswitch ]; then
     local_nmon_archive_dir="${output}/nmon"
     mkdir -p $local_nmon_archive_dir
     log info "新建本地nmon文件的存放目录: ${local_nmon_archive_dir}"
-
     if [[ -n $nmonident ]]; then
         remote_nmon_archive_dir="${nmonident}/${output}"
     else
         remote_nmon_archive_dir=${output}
     fi
-
-    rssh_args="-l $logfile $nmonregex exec mkdir -- -p $remote_nmon_archive_dir"
-    log info "远程服务器上, 新建临时目录: ${remote_nmon_archive_dir}, 执行命令: rssh_async ${rssh_args}"
-    rssh_async $rssh_args
+    remote_ops mkdir
 fi
 
 log info "运行前检查结束!!!"
@@ -391,11 +522,7 @@ log info "运行前检查结束!!!"
 # 发起nmon监视
 if [ $nmonswitch ]; then 
     monitor_nmon_file="${remote_nmon_archive_dir}/res.nmon"
-    rssh_args="-l $logfile $nmonregex exec $nmonprogm -- -F $monitor_nmon_file -t -s $monitor_interval -c $monitor_count"
-    log info "nmon监控发起开始..., 执行命令: rssh_async ${rssh_args}"
-    rssh_async $rssh_args
-    log info "nmon监控发起结束!!!"
-    echo ""
+    remote_ops runnmon
 fi
 
 # 以CLI mode运行jmeter
@@ -408,10 +535,7 @@ log info "运行jmeter结束!!!，返回码: $retcode"
 # 运行后操作
 ## 下载远程服务器上监视系统资源的nmon文件
 if [ $nmonswitch ]; then 
-    rssh_args="-l $logfile $nmonregex get $monitor_nmon_file $local_nmon_archive_dir"
-    log info "下载远程服务器上的nmon文件..., 将执行命令: rssh_async ${rssh_args}"
-    rssh_async $rssh_args
-    log info "下载远程服务器上的nmon文件结束!!!"
+    remote_ops downloadnmon
 fi
 
 ## 下载nmon文件成功后，使用rnmon快速分析结果，并删除服务器的临时目录
@@ -424,10 +548,7 @@ if [ $nmonswitch ]; then
         log info "使用rnmon程序，分析${local_nmon_archive_dir}目录下的nmon文件，其结果为:"
         cat ${res_nmon_file}
         # 删除服务器的临时目录
-        rssh_args="-l $logfile $nmonregex exec rm -- -rf ${remote_nmon_archive_dir}"
-        log info "监测${local_nmon_archive_dir}目录中存在*res.nmon文件，删除远程服务器上临时目录..., 执行命令: rssh_async ${rssh_args}"
-        rssh_async $rssh_args
-        log info "删除远程服务器上的临时目录结束!!!"
+        remote_ops rmnmon
     else
         log error "监测${local_nmon_archive_dir}目录中不存在*res.nmon文件，代表下载nmon文件失败，请检查后重新手工下载监控文件: ${monitor_nmon_file}, 本地的nmon临时目录里有: ${res}"
     fi

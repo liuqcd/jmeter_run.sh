@@ -38,6 +38,34 @@ rnmon ./ > res.nmon.txt && cat res.nmon.txt
 # 使用sftp工具，下载压力机上收集的数据到本地目录，包括res目录，res.jtl, jmeter.log和nmon目录
 # 打开res/index.html查看JMeter生成的压测图表，分析当前测试结果。
 ```
+或者利用免密登录形式，使用ssh、scp命令完成上述过程：
+```shell
+# step 1
+# 删除JMeter产生的数据：res目录， res.jtl文件，jmeter.log日志
+rm -rf res* nmon/*nmon* jmeter.log 
+# 删除被监控服务器上监控文件
+ssh user@ip rm perf/res.nmon 
+...
+
+# step 2
+jmeter -Jjmeter.reportgenerator.overall_granularity=2000 -Jsummariser.interval=10 -JThreads=100 -JRampup=1 -JDuration=310 -JLoopOrRampupCount=-1 -n -t 1.jmx -l res.jtl -e -o res
+# 发起nmon监控
+ssh user@ip nmon -F perf/res.nmon -t -s 1 -c 300
+...
+# 查看jmeter命令返显的概述结果（每10秒的增量，从测试开始到现在平均值，包括TPS, 平均响应时间，错误数据和错误率）
+
+# step 3
+# 下载nmon文件
+scp user@ip:per/res.nmon ./
+...
+# 快速分析nmon文件并查看文件(cpu) , rnmon为自己写的小程序，可快速分析当前目录下.nmon文件的cpu%使用，包括usr%,sys%, idle%...和各项值的标准差（用于查看曲线波动情况） 
+rnmon ./ > res.nmon.txt && cat res.nmon.txt
+
+# step 4
+# 新建本地目录并按场景和一些规范重命令
+# 使用sftp工具，下载压力机上收集的数据到本地目录，包括res目录，res.jtl, jmeter.log和nmon目录
+# 打开res/index.html查看JMeter生成的压测图表，分析当前测试结果。
+```
 每次测试执行上述基本固定的操作，感觉还是挻繁琐的OVO
 
 故想利用run.sh脚本完成以下目标: 
