@@ -584,5 +584,25 @@ else
 fi
 log info "临时归档结束!!!"
 
+# 重命令临时归档目录
+## 根据Jmeter生成的HTML报告里的statistics.json文件，重命名临时归档目录
+## 0719-1714 -> 0719-1714_4u_30.1qps20.0ms0err
+statisticsFile="${output}/${JTLHtmlDir}/statistics.json"
+if [ -f $statisticsFile ]; then
+    ### 从statistics.json文件中取得Total事务的三个值，对应TPS、平均响应时间、错误数
+    total_throughput=`jq '.Total.throughput' ${statisticsFile}`
+    total_meanResTime=`jq '.Total.meanResTime' ${statisticsFile}`
+    total_errorCount=`jq '.Total.errorCount' ${statisticsFile}`
+    ### 保留一位小数
+    total_throughput=`printf "%.1f" ${total_throughput}`
+    total_meanResTime=`printf "%.1f" ${total_meanResTime}`
+    ### 重命名输出目录
+    newoutput="${output}_${Threads}u_${total_throughput}qps${total_meanResTime}ms${total_errorCount}err"
+    mv $output $newoutput
+    log info "重命令${output}目录为到临时归档目录: ${newoutput}"
+else
+    log warn "${statisticsFile}文件不存在"
+fi
+
 ## 移动run.sh脚本的日志文件到临时目录
-mv $logfile $output
+mv $logfile $newoutput
